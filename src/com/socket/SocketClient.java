@@ -1,22 +1,29 @@
 package com.socket;
 
-import java.awt.EventQueue;
+import java.awt.Color;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.Toolkit;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
 
-import javax.swing.JButton;
+import javax.swing.ImageIcon;
 import javax.swing.JFileChooser;
-import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JTextArea;
 import javax.swing.SwingConstants;
 
+import com.data.ChatData;
+import com.data.ProfileData;
 import com.ui.ChatFrame;
-import com.ui.login.LoginUI;
 
 public class SocketClient implements Runnable{
     
@@ -27,6 +34,9 @@ public class SocketClient implements Runnable{
     public ObjectInputStream In;
     public ObjectOutputStream Out;
 	private boolean keepRunning;
+	public ProfileData profileData;
+	public ChatData chatData;
+	private Color contactHighlightColor;
     
     public SocketClient(ChatFrame frame, SocketData socketData) {
     	ui = frame; this.serverAddr = ui.serverAddr; this.port = ui.port;
@@ -42,6 +52,10 @@ public class SocketClient implements Runnable{
 			}
 		}
         In = socketData.objectInputStream;
+        profileData = new ProfileData();
+        chatData = new ChatData();
+        contactHighlightColor = ui.lightBlue;
+        
     }
 
     
@@ -53,34 +67,15 @@ public class SocketClient implements Runnable{
             try {
                 Message msg = (Message) In.readObject();
                 System.out.println("Incoming : "+msg.toString());
-                ui.requestFocus();
-                Toolkit.getDefaultToolkit().beep();
                 
                 if(msg.type.equals("message")){
-                    if(msg.recipient.equals(ui.username)){
-                        ui.largeTextArea.append("["+msg.sender +" > Me] : " + msg.content + "\n");
-                    }
-                    else{
-                        ui.largeTextArea.append("["+ msg.sender +" > "+ msg.recipient +"] : " + msg.content + "\n");
-                    }
-                    if (msg.content.equals("Sending file to 'All' is forbidden") && msg.sender.equals("SERVER"))
-                    	JOptionPane.showMessageDialog(ui, "Sending file to 'All' is forbidden");
-                }
-                else if(msg.type.equals("login")){
-                    if(msg.content.equals("TRUE")){
-                        ui.largeTextArea.setEnabled(false); 
-                        ui.sendMessageButton.setEnabled(true);
-                        ui.largeTextArea.append("[SERVER > Me] : Login Successful\n");
-                    }
-                    else{
-                        ui.largeTextArea.append("[SERVER > Me] : Login Failed\n");
-                    }
-                }
-                else if(msg.type.equals("test")){
-                    ui.largeTextArea.setEnabled(true);
-                    ui.sendFileChooserButton.setEnabled(true);
+                	if(msg.sender.equals(ui.username) == false) {
+                		react();
+                		handleNewMessage(msg);
+                	}
                 }
                 else if(msg.type.equals("newuser")){
+                	react();
                     if(!msg.content.equals(ui.username)){
                         boolean exists = false;
                         for(int i = 0; i < ui.model.getSize(); i++){
@@ -90,41 +85,26 @@ public class SocketClient implements Runnable{
                             }
                         }
                         if(!exists){
-                        	ui.model.addElement(new JLabel(msg.content, ui.defaultIcon32, SwingConstants.LEFT)); 
+                        	manageNewUser(msg);
                         }
                     }
                 }
-                else if(msg.type.equals("signup")){
-                    if(msg.content.equals("TRUE")){
-                        ui.largeTextArea.setEnabled(false); 
-                        ui.sendMessageButton.setEnabled(true); 
-                        ui.largeTextArea.append("[SERVER > Me] : Singup Successful\n");
-                    }
-                    else{
-                        ui.largeTextArea.append("[SERVER > Me] : Signup Failed\n");
-                    }
-                }
                 else if(msg.type.equals("signout")){
+                	// TODO notify and remove all profiledata, chatdata
                     if(msg.content.equals(ui.username)){
-                        ui.largeTextArea.append("["+ msg.sender +" > Me] : Bye\n");
+                        ui.notificationArea.append("["+ msg.sender +" > Me] : Bye\n");
                         ui.sendMessageButton.setEnabled(false); 
                         
                         for(int i = 1; i < ui.model.size(); i++){
                             ui.model.removeElementAt(i);
                         }
 
-                        logOut();
+                        keepRunning = false;
                     }
                     else{
-                    	ui.contactList.setSelectedIndex(0);
-                    	for(int i = 1; i < ui.model.size(); i++){
-                    		JLabel target = (JLabel) ui.model.getElementAt(i);
-                    		if( target.getText().equals(msg.content)){
-                    			ui.model.removeElementAt(i);
-                    			break;
-                    		}
-                    	}
-                        ui.largeTextArea.append("["+ msg.sender +" > All] : "+ msg.content +" has signed out\n");
+                    	react();
+                        ui.model.removeElement(msg.content);
+                        ui.notificationArea.append("["+ msg.sender +" > All] : "+ msg.content +" has signed out\n");
                     }
                 }
                 else if(msg.type.equals("upload_req")){
@@ -140,6 +120,7 @@ public class SocketClient implements Runnable{
                             Download dwn = new Download(saveTo, ui);
                             Thread t = new Thread(dwn);
                             t.start();
+                        	// TODO  sending file message add to the panel
                             //send(new Message("upload_res", (""+InetAddress.getLocalHost().getHostAddress()), (""+dwn.port), msg.sender));
                             send(new Message("upload_res", ui.username, (""+dwn.port), msg.sender));
                         }				//r/		type		sender		content		recipient
@@ -162,20 +143,27 @@ public class SocketClient implements Runnable{
                         t.start();
                     }
                     else{
-                        ui.largeTextArea.append("[SERVER > Me] : "+msg.sender+" rejected file request\n");
+                    	// TODO 
+                        ui.notificationArea.append("[SERVER > Me] : "+msg.sender+" rejected file request\n");
                     }
                 }
-                else{
-                    ui.largeTextArea.append("[SERVER > Me] : Unknown message type\n");
+                else if(msg.type.equals("profile_data_res")){
+                	if(msg.dataType.equals("name")){
+                		profileData.setName(msg.recipient, msg.content);
+                		if(msg.recipient.equals(ui.username))
+                			profileData.getContactLabel(ui.username).setText(msg.content);
+                	} else if (msg.dataType.equals("about")) {
+                		profileData.setAbout(msg.recipient, msg.content);
+                	}
                 }
-                ui.largeTextScrollPane.getVerticalScrollBar().setValue(ui.largeTextScrollPane.getVerticalScrollBar().getMaximum()+1000);
-                ui.messageInputTextField.requestFocus();
+                else{
+                    ui.notificationArea.append("[SERVER > Me] : Unknown message type\n");
+                }
             }
             catch(Exception ex) {
-                ui.largeTextArea.append("[Application > Me] : Connection Lost to the Server\n");
+                ui.notificationArea.append("[Application > Me] : Connection Failure\n");
                 ui.sendMessageButton.setEnabled(false);
                 ui.sendFileChooserButton.setEnabled(false);
-                ui.sendFileButton.setEnabled(false);
                 
                 for(int i = 1; i < ui.model.size(); i++){
                     ui.model.removeElementAt(i);
@@ -191,32 +179,79 @@ public class SocketClient implements Runnable{
 
 
 	/**
+	 * @param msg
+	 */
+	private void manageNewUser(Message msg) {
+		ui.model.addElement(new JLabel(msg.content,ui.defaultContactIcon32, SwingConstants.LEFT)); 
+		loadProfileData(msg.content, "all");
+		JPanel chatPanel = new JPanel();
+		chatPanel.setLayout(new GridBagLayout());
+		profileData.setProfilePicture(msg.content, ui.defaultProfilePicture);
+		chatData.setContactPanel(msg.content, chatPanel );
+		chatData.setGridBagConstraint(msg.content, new GridBagConstraints());
+		chatData.setLastSender(msg.content, "none");
+		ui.notificationArea.append("\n"+msg.content+" is online.");
+	}
+
+
+	/**
+	 * @param msg
+	 */
+	private void handleNewMessage(Message msg) {
+		// TODO highlight user who sent a message
+		ui.notificationArea.append("\n# new message from "+ msg.sender);
+		if(ui.contactList.getSelectedValue() != profileData.getContactLabel(msg.sender))
+			profileData.getContactLabel(msg.sender).setBackground(contactHighlightColor);
+		// TODO
+		JPanel chatPanel = chatData.getContactPanel(msg.sender);
+		GridBagConstraints gridContraints = chatData.getGridBagConstraint(msg.sender);
+		
+		gridContraints.gridx = 0;
+		if( chatData.getLastSender(msg.sender) == ui.username) {
+			chatData.setLastSender(msg.sender, msg.sender);
+			JTextArea nameTextArea = new JTextArea(profileData.getName(msg.sender));
+			nameTextArea.setSize(ui.nameBoxSize);
+			nameTextArea.setBorder(null);
+			nameTextArea.setBackground(ui.white);
+			chatPanel.add(nameTextArea,gridContraints);
+		}
+
+		JTextArea messageTxtArea = new JTextArea();
+		messageTxtArea.setLineWrap(true);
+		messageTxtArea.setWrapStyleWord(true);
+		messageTxtArea.setSize(ui.messageBoxSize);
+		messageTxtArea.setText(msg.content);
+		messageTxtArea.setSize(messageTxtArea.getPreferredSize());
+		messageTxtArea.setBorder(null);
+		messageTxtArea.setBackground(ui.white);
+		gridContraints.gridx++;
+		chatPanel.add(messageTxtArea,gridContraints);
+
+		JTextArea timeTxtArea = new JTextArea(getTime());
+		timeTxtArea.setSize(ui.timeBoxSize);
+		timeTxtArea.setBorder(null);
+		timeTxtArea.setBackground(ui.white);
+		gridContraints.gridx++;
+		chatPanel.add(timeTxtArea,gridContraints);
+		
+		gridContraints.gridy++;
+		
+		if(msg.recipient.equals(ui.username)){
+		    ui.notificationArea.append("["+msg.sender +" > Me] : " + msg.content + "\n");
+		}
+		else{
+		    ui.notificationArea.append("["+ msg.sender +" > "+ msg.recipient +"] : " + msg.content + "\n");
+		}
+		// TODO add row to chatpanel
+	}
+
+
+	/**
 	 * 
 	 */
-	private void logOut() {
-		keepRunning = false;
-		try {
-			In.close();
-			Out.close();
-			socket.close();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-		EventQueue.invokeLater(new Runnable() {
-			
-			@Override
-			public void run() {
-				// TODO Auto-generated method stub
-				try {
-					new LoginUI();
-				} catch (IOException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-			}
-		});
-		
-		ui.dispose();
+	private void react() {
+		Toolkit.getDefaultToolkit().beep();
+		ui.toFront();
 	}
     
     /**
@@ -233,18 +268,52 @@ public class SocketClient implements Runnable{
             System.out.println("Outgoing : "+msg.toString());
         } 
         catch (IOException ex) {
-        	if(msg.type.equals("signout"))
-        		logOut();
-        	else
-        		System.out.println("Exception SocketClient send()");
+            System.out.println("Exception SocketClient send()");
         }
     }
-    
+	/**
+	 * 
+	 */
+	public void loadProfileData(final String user, final String dataType) {
+		new Thread(new Runnable() {
+			
+			@Override
+			public void run() {
+				try {
+					Download dwn = new Download();
+					send(new Message("profile_data_req", ui.username, user, dataType, ""+dwn.port));
+					if(dataType.equals("all") == false){
+						return;
+					}
+					new Thread(dwn).start();
+					synchronized (dwn) {
+						dwn.wait();
+					}
+					profileData.setProfilePicture(ui.username, dwn.getImage());
+					BufferedImage labelImage;
+					if(user == ui.username)
+						labelImage = ImageProcessor.scaleBalanced(dwn.getImage(), BufferedImage.TYPE_INT_RGB, 48, 0);
+					else
+						labelImage = ImageProcessor.scaleBalanced(dwn.getImage(), BufferedImage.TYPE_INT_RGB, 32, 0);
+					profileData.getContactLabel(user).setIcon(new ImageIcon(labelImage));
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+			}
+	
+		}).start();
+	}
+	
+	/**
+	 * @return current time as h:mm AM/PM
+	 */
+	@SuppressWarnings("static-access")
+	public String getTime(){
+		SimpleDateFormat time = new SimpleDateFormat("h:mm a");
+		return time.getInstance().format(Calendar.getInstance().getTime());
+	}
+	
     public void closeThread(Thread t){
         t = null;
-    }
-    public void requestLogOut(){
-    	send(new Message("signout", ui.username, ".bye", "SERVER")); 
-    	
     }
 }

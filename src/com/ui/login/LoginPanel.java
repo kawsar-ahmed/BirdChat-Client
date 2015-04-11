@@ -237,7 +237,7 @@ public class LoginPanel extends JPanel implements MouseListener,FocusListener {
 			if(frame[i] instanceof LoginUI ) {
 				//frame[i].dispatchEvent(new WindowEvent(frame[i], WindowEvent.WINDOW_CLOSING));
 				frame[i].dispose();
-//				break;
+				break;
 			}
 		}
 		

@@ -60,12 +60,6 @@ public class LoginUI extends JFrame{
 	}
 	
 	public LoginUI() throws IOException{
-		try {
-            UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
-        } 
-        catch(Exception ex){
-            System.out.println("Look & Feel exception");
-        }
 		
 		init();
 		addMenus();

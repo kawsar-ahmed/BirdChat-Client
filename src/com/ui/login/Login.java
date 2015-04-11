@@ -166,8 +166,6 @@ public class Login implements Runnable {
 			}
 			else if ( tempMessage.sender.equals("SERVER") && tempMessage.content.equals("TRUE"))
 				return new Message("success", null, null, null);
-			else if ( tempMessage.sender.equals("SERVER") && tempMessage.content.equals("DUPLICATE"))
-				return new Message("error", null, "Sorry, a user is already logged in with this ID. Please check sign in details then try again.", null);
 		}
 		return new Message("error", null, "Sorry, we don't recognize your sign-in details. Please check sign in details then try again.", null);
 	}
